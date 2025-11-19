@@ -16,6 +16,24 @@ if len(sys.argv) >= 3:
 BOARD_SIZE = 20
 WIN_COUNT = 5
 
+def check_win(board, r, c, symbol):
+    # kiểm tra 5 liên tiếp theo 4 hướng
+    dirs = [(1,0),(0,1),(1,1),(1,-1)]
+    for dr,dc in dirs:
+        cnt = 1
+        # dương
+        rr,cc = r+dr, c+dc
+        while 0<=rr<BOARD_SIZE and 0<=cc<BOARD_SIZE and board[rr][cc]==symbol:
+            cnt += 1
+            rr += dr; cc += dc
+        # âm
+        rr,cc = r-dr, c-dc
+        while 0<=rr<BOARD_SIZE and 0<=cc<BOARD_SIZE and board[rr][cc]==symbol:
+            cnt += 1
+            rr -= dr; cc -= dc
+        if cnt >= WIN_COUNT:
+            return True
+    return False
 
 class GameThread(threading.Thread):
     def __init__(self, p1_sock, p2_sock, addr1, addr2):
