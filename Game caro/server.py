@@ -80,3 +80,96 @@ class GameThread(threading.Thread):
         for t in threads:
             t.join()
         self.stop()
+
+        def handle_client(self, idx):
+        s = self.socks[idx]
+        f = s.makefile('r', encoding='utf-8')
+        try:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                # chỉ xử lý MOVE r c
+                parts = line.split()
+                if parts[0] == "MOVE" and len(parts) == 3:
+                    try:
+                        r = int(parts[1]); c = int(parts[2])
+                    except:
+                        self.send(idx, "INVALID bad_coords")
+                        continue
+                    # kiểm tra lượt
+                    if idx != self.turn:
+                        self.send(idx, "INVALID not_your_turn")
+                        continue
+                    # kiểm tra tọa độ
+                    if not (0 <= r < BOARD_SIZE and 0 <= c < BOARD_SIZE):
+                        self.send(idx, "INVALID out_of_range")
+                        continue
+                    if self.board[r][c] != '.':
+                        self.send(idx, "INVALID occupied")
+                        continue
+                    # ghi nước
+                    sym = self.symbols[idx]
+                    self.board[r][c] = sym
+                    # gửi VALID tới cả hai (còn client sẽ tự cập nhật)
+                    self.broadcast(f"VALID {r} {c} {sym}")
+                    # kiểm tra thắng
+                    if check_win(self.board, r, c, sym):
+                        self.broadcast(f"WIN {sym}")
+                        self.running = False
+                        break
+                    # kiểm tra hòa (board full)
+                    full = all(self.board[i][j] != '.' for i in range(BOARD_SIZE) for j in range(BOARD_SIZE))
+                    if full:
+                        self.broadcast("DRAW")
+                        self.running = False
+                        break
+                    # đổi lượt
+                    self.turn = 1 - self.turn
+                    self.send(self.turn, f"TURN {self.symbols[self.turn]}")
+                    self.send(1-self.turn, "WAIT")
+                else:
+                    self.send(idx, "INVALID unknown_command")
+        except Exception as e:
+            # client rời
+            pass
+        finally:
+            # thông báo đối phương
+            try:
+                other = 1-idx
+                self.send(other, "OPPONENT_LEFT")
+            except:
+                pass
+            self.running = False
+
+    def stop(self):
+        for s in self.socks:
+            try:
+                s.close()
+            except:
+                pass
+
+def pairer(server_sock):
+    print("Server ready. Chờ 2 client kết nối để bắt đầu ván...")
+    while True:
+        p1, a1 = server_sock.accept()
+        print("Client 1 từ", a1)
+        # chờ client thứ 2
+        p2, a2 = server_sock.accept()
+        print("Client 2 từ", a2)
+        game = GameThread(p1, p2, a1, a2)
+        game.start()
+
+def main():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((HOST, PORT))
+        s.listen()
+        print(f"Listening on {HOST}:{PORT}")
+        try:
+            pairer(s)
+        except KeyboardInterrupt:
+            print("Shutting down server.")
+
+if __name__ == "__main__":
+    main()
