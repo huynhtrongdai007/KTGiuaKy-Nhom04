@@ -1,82 +1,62 @@
-# server.py
-# Chạy: python server.py [HOST] [PORT]
-# Mặc định HOST=0.0.0.0, PORT=8765
-
 import socket
 import threading
 import sys
+from common import *
 
-HOST = '0.0.0.0'
-PORT = 8765
-if len(sys.argv) >= 2:
-    HOST = sys.argv[1]
-if len(sys.argv) >= 3:
-    PORT = int(sys.argv[2])
-
-BOARD_SIZE = 20
-WIN_COUNT = 5
-
-def check_win(board, r, c, symbol):
-    # kiểm tra 5 liên tiếp theo 4 hướng
-    dirs = [(1,0),(0,1),(1,1),(1,-1)]
-    for dr,dc in dirs:
-        cnt = 1
-        # dương
-        rr,cc = r+dr, c+dc
-        while 0<=rr<BOARD_SIZE and 0<=cc<BOARD_SIZE and board[rr][cc]==symbol:
-            cnt += 1
-            rr += dr; cc += dc
-        # âm
-        rr,cc = r-dr, c-dc
-        while 0<=rr<BOARD_SIZE and 0<=cc<BOARD_SIZE and board[rr][cc]==symbol:
-            cnt += 1
-            rr -= dr; cc -= dc
-        if cnt >= WIN_COUNT:
-            return True
-    return False
-
-class GameThread(threading.Thread):
-    def __init__(self, p1_sock, p2_sock, addr1, addr2):
+class ClientHandler(threading.Thread):
+    def __init__(self, sock, addr, server):
         super().__init__(daemon=True)
-        self.socks = [p1_sock, p2_sock]
-        self.addrs = [addr1, addr2]
-        self.board = [['.' for _ in range(BOARD_SIZE)] for __ in range(BOARD_SIZE)]
-        self.symbols = ['X','O']  # p0 -> X, p1 -> O
-        self.turn = 0  # index of current player
+        self.sock = sock
+        self.addr = addr
+        self.server = server
+        self.username = f"Guest_{addr[1]}"
         self.running = True
 
-    def send(self, idx, msg):
+    def send(self, data):
         try:
-            self.socks[idx].sendall((msg+"\n").encode())
+            send_json(self.sock, data)
         except:
             pass
 
-    def broadcast(self, msg):
-        for s in self.socks:
-            try:
-                s.sendall((msg+"\n").encode())
-            except:
-                pass
-
     def run(self):
-        # gửi START
         try:
-            self.send(0, f"START {self.symbols[0]}")
-            self.send(1, f"START {self.symbols[1]}")
-            # thông báo lượt (X đi trước)
-            self.send(self.turn, f"TURN {self.symbols[self.turn]}")
-            self.send(1-self.turn, f"WAIT")
+            while self.running:
+                req = recv_json(self.sock)
+                if not req:
+                    break
+                cmd = req.get("type")
+                if cmd == CMD_LOGIN:
+                    self.username = req.get("username", self.username)
+                    self.send({"type": CMD_LOGIN_OK, "username": self.username})
         except Exception as e:
-            self.stop()
-            return
+            print(e)
+        finally:
+            self.server.disconnect(self)
+            self.sock.close()
 
-        # tạo thread lắng nghe từng socket
-        threads = []
-        for idx in (0,1):
-            t = threading.Thread(target=self.handle_client, args=(idx,), daemon=True)
-            t.start()
-            threads.append(t)
+class Server:
+    def __init__(self, host, port):
+        self.host = host
+        self.port = port
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.clients = []
 
-        for t in threads:
-            t.join()
-        self.stop()
+    def start(self):
+        self.sock.bind((self.host, self.port))
+        self.sock.listen()
+        print(f"Server started on {self.host}:{self.port}")
+        while True:
+            conn, addr = self.sock.accept()
+            print("New client:", addr)
+            client = ClientHandler(conn, addr, self)
+            self.clients.append(client)
+            client.start()
+
+    def disconnect(self, client):
+        if client in self.clients:
+            self.clients.remove(client)
+
+if __name__ == "__main__":
+    host = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_HOST
+    port = int(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_PORT
+    Server(host, port).start()
