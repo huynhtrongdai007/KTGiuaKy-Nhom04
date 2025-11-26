@@ -204,3 +204,102 @@ if __name__ == "__main__":
     port = int(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_PORT
     server = Server(host, port)
     server.start()
+    class Room:
+    def __init__(self, room_id, name):
+        self.room_id = room_id
+        self.name = name
+        self.players = []
+        self.board = [['.' for _ in range(BOARD_SIZE)] for __ in range(BOARD_SIZE)]
+        self.turn = 0
+        self.symbols = ['X', 'O']
+        self.game_started = False
+
+    def reset_game(self):
+        self.board = [['.' for _ in range(BOARD_SIZE)] for __ in range(BOARD_SIZE)]
+        self.turn = 0
+        self.game_started = False
+
+    def start_game(self):
+        if len(self.players) == 2:
+            self.reset_game()
+            self.game_started = True
+            for i in range(2):
+                opp_idx = 1 - i
+                self.players[i].send({
+                    "type": CMD_GAME_START,
+                    "symbol": self.symbols[i],
+                    "opponent": self.players[opp_idx].username
+                })
+            self.broadcast_turn()
+
+    def broadcast_turn(self):
+        current_player = self.players[self.turn]
+        self.broadcast({
+            "type": CMD_TURN,
+            "symbol": self.symbols[self.turn],
+            "username": current_player.username
+        })
+
+    def handle_move(self, client, r, c):
+        if not self.game_started:
+            return
+            
+        idx = self.players.index(client)
+        if idx != self.turn:
+            return
+
+        if not (0 <= r < BOARD_SIZE and 0 <= c < BOARD_SIZE):
+            return
+
+        if self.board[r][c] != '.':
+            return
+
+        sym = self.symbols[idx]
+        self.board[r][c] = sym
+
+        self.broadcast({
+            "type": CMD_VALID_MOVE,
+            "r": r, "c": c, "symbol": sym
+        })
+
+        is_win, win_cells = self.check_win(r, c, sym)
+        if is_win:
+            self.broadcast({
+                "type": CMD_WIN,
+                "symbol": sym,
+                "username": client.username,
+                "r": r, "c": c,
+                "win_cells": win_cells
+            })
+            self.game_started = False
+            return
+
+        if all(self.board[i][j] != '.' for i in range(BOARD_SIZE) for j in range(BOARD_SIZE)):
+            self.broadcast({"type": CMD_DRAW})
+            self.game_started = False
+            return
+
+        self.turn = 1 - self.turn
+        self.broadcast_turn()
+
+    def check_win(self, r, c, sym):
+        dirs = [(1,0), (0,1), (1,1), (1,-1)]
+        for dr, dc in dirs:
+            cells = [(r, c)]
+
+            rr, cc = r + dr, c + dc
+            while 0 <= rr < BOARD_SIZE and 0 <= cc < BOARD_SIZE and self.board[rr][cc] == sym:
+                cells.append((rr, cc))
+                rr += dr
+                cc += dc
+
+            rr, cc = r - dr, c - dc
+            while 0 <= rr < BOARD_SIZE and 0 <= cc < BOARD_SIZE and self.board[rr][cc] == sym:
+                cells.append((rr, cc))
+                rr -= dr
+                cc -= dc
+
+            if len(cells) >= WIN_COUNT:
+                return True, cells
+
+        return False, None
