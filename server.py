@@ -205,32 +205,32 @@ if __name__ == "__main__":
     server = Server(host, port)
     server.start()
     class Room:
-    def __init__(self, room_id, name):
-        self.room_id = room_id
-        self.name = name
-        self.players = []
-        self.board = [['.' for _ in range(BOARD_SIZE)] for __ in range(BOARD_SIZE)]
-        self.turn = 0
-        self.symbols = ['X', 'O']
-        self.game_started = False
+        def __init__(self, room_id, name):
+            self.room_id = room_id
+            self.name = name
+            self.players = []
+            self.board = [['.' for _ in range(BOARD_SIZE)] for __ in range(BOARD_SIZE)]
+            self.turn = 0
+            self.symbols = ['X', 'O']
+            self.game_started = False
 
-    def reset_game(self):
-        self.board = [['.' for _ in range(BOARD_SIZE)] for __ in range(BOARD_SIZE)]
-        self.turn = 0
-        self.game_started = False
+        def reset_game(self):
+            self.board = [['.' for _ in range(BOARD_SIZE)] for __ in range(BOARD_SIZE)]
+            self.turn = 0
+            self.game_started = False
 
-    def start_game(self):
-        if len(self.players) == 2:
-            self.reset_game()
-            self.game_started = True
-            for i in range(2):
-                opp_idx = 1 - i
-                self.players[i].send({
-                    "type": CMD_GAME_START,
-                    "symbol": self.symbols[i],
-                    "opponent": self.players[opp_idx].username
-                })
-            self.broadcast_turn()
+        def start_game(self):
+            if len(self.players) == 2:
+                self.reset_game()
+                self.game_started = True
+                for i in range(2):
+                    opp_idx = 1 - i
+                    self.players[i].send({
+                        "type": CMD_GAME_START,
+                        "symbol": self.symbols[i],
+                        "opponent": self.players[opp_idx].username
+                    })
+                self.broadcast_turn()
 
     def broadcast_turn(self):
         current_player = self.players[self.turn]
