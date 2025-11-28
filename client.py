@@ -37,3 +37,182 @@ class LoginView(tk.Frame):
             messagebox.showerror("Error", "Username cannot be empty")
             return
         self.on_login(ip, name)
+
+class LobbyView(tk.Frame):
+    """Màn hình sảnh chờ (Lobby)."""
+    def __init__(self, master, on_create, on_join, on_refresh, on_quick_play):
+        super().__init__(master)
+        self.on_create = on_create
+        self.on_join = on_join
+        self.on_refresh = on_refresh
+        self.on_quick_play = on_quick_play
+        
+        # Header
+        header_frame = tk.Frame(self, bg="#2196F3", height=60)
+        header_frame.pack(fill="x")
+        
+        # Button packed to the right
+        tk.Button(header_frame, text="↻ Refresh", command=on_refresh, font=("Arial", 10, "bold"), bg="white", fg="#2196F3", relief="flat").pack(side="right", padx=20, pady=15)
+        
+        # Label packed to fill remaining space (effectively centering it)
+        tk.Label(header_frame, text="SẢNH CHỜ", font=("Helvetica", 24, "bold"), bg="#2196F3", fg="white").pack(side="left", expand=True, fill="x", pady=10)
+
+        # Khu vực nội dung chính
+        content_frame = tk.Frame(self, padx=20, pady=20)
+        content_frame.pack(fill="both", expand=True)
+
+        # Danh sách phòng (Treeview)
+        columns = ("id", "name", "players", "status")
+        self.tree = ttk.Treeview(content_frame, columns=columns, show="headings", height=15)
+        
+        # Tiêu đề cột
+        self.tree.heading("id", text="ID")
+        self.tree.heading("name", text="Tên Phòng")
+        self.tree.heading("players", text="Số người")
+        self.tree.heading("status", text="Trạng thái")
+        
+        # Độ rộng cột
+        self.tree.column("id", width=50, anchor="center")
+        self.tree.column("name", width=300, anchor="w")
+        self.tree.column("players", width=100, anchor="center")
+        self.tree.column("status", width=100, anchor="center")
+        
+        # Thanh cuộn
+        scrollbar = ttk.Scrollbar(content_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        
+        self.tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Các nút chức năng
+        btn_frame = tk.Frame(self, pady=20)
+        btn_frame.pack(fill="x", padx=20)
+        
+        # Style cho nút
+        style = ttk.Style()
+        style.configure("Action.TButton", font=("Arial", 12, "bold"), padding=10)
+        
+        tk.Button(btn_frame, text="✚ Create Room", command=self.prompt_create, bg="#4CAF50", fg="white", font=("Arial", 12, "bold"), width=15).pack(side="left", padx=10)
+        tk.Button(btn_frame, text="⚡ Quick Play", command=self.on_quick_play, bg="#9C27B0", fg="white", font=("Arial", 12, "bold"), width=15).pack(side="left", padx=10)
+        tk.Button(btn_frame, text="➜ Join Selected", command=self.do_join, bg="#FF9800", fg="white", font=("Arial", 12, "bold"), width=15).pack(side="right", padx=10)
+
+        self.rooms_data = []
+
+    def update_list(self, rooms):
+        self.rooms_data = rooms
+        # Xóa danh sách cũ
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+            
+        # Thêm danh sách mới
+        for r in rooms:
+            status = r['status']
+            players = f"{r['count']}/2"
+            self.tree.insert("", "end", values=(r['id'], r['name'], players, status))
+
+    def prompt_create(self):
+        name = simpledialog.askstring("Create Room", "Enter room name:")
+        if name:
+            self.on_create(name)
+
+    def do_join(self):
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showwarning("Warning", "Please select a room to join")
+            return
+        
+        item = self.tree.item(sel[0])
+        room_id = item['values'][0]
+        self.on_join(room_id)
+
+class GameView(tk.Frame):
+    """Màn hình chơi game (Bàn cờ)."""
+    def __init__(self, master, on_move, on_chat, on_leave):
+        super().__init__(master)
+        self.on_move = on_move
+        self.on_chat = on_chat
+        self.on_leave = on_leave
+        
+        # Trái: Bàn cờ
+        self.left_panel = tk.Frame(self)
+        self.left_panel.pack(side="left", padx=10, pady=10)
+        
+        # Phải: Thông tin & Chat
+        self.right_panel = tk.Frame(self, width=200)
+        self.right_panel.pack(side="right", fill="y", padx=10, pady=10)
+        
+        # Thông tin phòng
+        self.lbl_room = tk.Label(self.right_panel, text="Room: ???", font=("Arial", 12, "bold"))
+        self.lbl_room.pack(pady=5)
+        
+        self.lbl_score = tk.Label(self.right_panel, text="Score: 0/0", font=("Arial", 10))
+        self.lbl_score.pack(pady=2)
+
+        self.lbl_status = tk.Label(self.right_panel, text="Waiting...", fg="gray")
+        self.lbl_status.pack(pady=5)
+        self.lbl_turn = tk.Label(self.right_panel, text="", font=("Arial", 14))
+        self.lbl_turn.pack(pady=10)
+        
+        tk.Button(self.right_panel, text="Leave Room", command=on_leave, bg="#f44336", fg="white").pack(pady=5)
+
+        # Khung Chat chuyên nghiệp
+        chat_container = tk.Frame(self.right_panel, relief="flat", bg="#ffffff")
+        chat_container.pack(fill="both", expand=True, pady=10)
+        
+        # Header Chat
+        chat_header = tk.Frame(chat_container, bg="#2196F3", height=30)
+        chat_header.pack(fill="x")
+        tk.Label(chat_header, text="💬 CHAT", font=("Arial", 10, "bold"), bg="#2196F3", fg="white").pack(pady=5)
+        
+        # Chat log với scrollbar
+        chat_frame = tk.Frame(chat_container)
+        chat_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        scrollbar = tk.Scrollbar(chat_frame)
+        scrollbar.pack(side="right", fill="y")
+        
+        self.chat_log = tk.Text(chat_frame, height=12, width=28, state="disabled", 
+                                wrap="word", yscrollcommand=scrollbar.set,
+                                font=("Arial", 9), bg="white")
+        self.chat_log.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=self.chat_log.yview)
+        
+        # Input frame
+        input_frame = tk.Frame(chat_container, bg="white")
+        input_frame.pack(fill="x", padx=5, pady=5)
+        
+        self.entry_chat = tk.Entry(input_frame, font=("Arial", 9))
+        self.entry_chat.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        self.entry_chat.bind("<Return>", self.send_chat)
+        
+        tk.Button(input_frame, text="📤", command=self.send_chat, 
+                  bg="#4CAF50", fg="white", font=("Arial", 9, "bold"),
+                  width=3, relief="flat").pack(side="right")
+
+        # Cấu hình tags cho chat bubbles (kiểu Facebook Messenger)
+        # Nền trắng cho chat log
+        self.chat_log.config(bg="white")
+        
+        # Tin nhắn của tôi: Hồng phấn, canh phải, margin trái lớn để tạo bubble nhỏ
+        self.chat_log.tag_config("own_bubble", background="#FFE4E9", 
+                                lmargin1=100, lmargin2=100, rmargin=8,
+                                spacing1=3, spacing3=3, justify="right")
+        self.chat_log.tag_config("own_name", foreground="#D32F2F", font=("Arial", 8, "bold"),
+                                justify="right", lmargin1=100, rmargin=8)
+        
+        # Tin nhắn đối thủ: Xanh cyan nhạt, sát lề trái, margin phải lớn để tạo bubble nhỏ
+        self.chat_log.tag_config("opponent_bubble", background="#E0F7FA",
+                                lmargin1=8, lmargin2=8, rmargin=100,
+                                spacing1=3, spacing3=3, justify="left")
+        self.chat_log.tag_config("opponent_name", foreground="#0277BD", font=("Arial", 8, "bold"),
+                                justify="left", lmargin1=8, rmargin=100)
+
+        # Canvas bàn cờ (điều chỉnh kích thước ô cho 20x20)
+        self.cell_size = 31  # Giảm từ 42 xuống 31 để bàn cờ 20x20 vừa khung
+        self.canvas_size = BOARD_SIZE * self.cell_size
+        self.canvas = tk.Canvas(self.left_panel, width=self.canvas_size, height=self.canvas_size, bg="#ffe4b5")
+        self.canvas.pack()
+        self.canvas.bind("<Button-1>", self.on_click)
+        
+        self.draw_grid()
+        self.last_move_item = None
