@@ -216,3 +216,129 @@ class GameView(tk.Frame):
         
         self.draw_grid()
         self.last_move_item = None
+
+    def draw_grid(self):
+        """Vẽ lưới ô vuông."""
+        for i in range(BOARD_SIZE + 1):
+            self.canvas.create_line(0, i*self.cell_size, self.canvas_size, i*self.cell_size)
+            self.canvas.create_line(i*self.cell_size, 0, i*self.cell_size, self.canvas_size)
+
+    def on_click(self, event):
+        """Xử lý sự kiện click chuột trên bàn cờ."""
+        c = event.x // self.cell_size
+        r = event.y // self.cell_size
+        if 0 <= r < BOARD_SIZE and 0 <= c < BOARD_SIZE:
+            self.on_move(r, c)
+
+    def send_chat(self, event=None):
+        msg = self.entry_chat.get().strip()
+        if msg:
+            self.on_chat(msg)
+            self.entry_chat.delete(0, tk.END)
+
+    def add_chat(self, sender, msg, is_own=False):
+        """Thêm tin nhắn vào khung chat với bubble styling."""
+        self.chat_log.config(state="normal")
+        
+        # Chọn tag dựa trên người gửi
+        name_tag = "own_name" if is_own else "opponent_name"
+        bubble_tag = "own_bubble" if is_own else "opponent_bubble"
+        
+        if is_own:
+            # Tin nhắn của tôi: căn phải
+            self.chat_log.insert(tk.END, f"{sender}\n", name_tag)
+            # Thêm padding vào tin nhắn để tạo bubble
+            padded_msg = f" {msg} "
+            self.chat_log.insert(tk.END, f"{padded_msg}\n", bubble_tag)
+        else:
+            # Tin nhắn đối thủ: sát lề trái
+            self.chat_log.insert(tk.END, f"{sender}\n", name_tag)
+            # Thêm padding vào tin nhắn
+            padded_msg = f" {msg} "
+            self.chat_log.insert(tk.END, f"{padded_msg}\n", bubble_tag)
+        
+        # Khoảng trắng giữa các bubble (tăng khoảng cách)
+       # self.chat_log.insert(tk.END, "\n\n")
+        
+        self.chat_log.see(tk.END)
+        self.chat_log.config(state="disabled")
+
+    def highlight_win(self, win_cells):
+        """Vẽ khung đỏ quanh các ô thắng."""
+        for r, c in win_cells:
+            x1 = c * self.cell_size
+            y1 = r * self.cell_size
+            self.canvas.create_rectangle(x1, y1, x1+self.cell_size, y1+self.cell_size, outline="red", width=3)
+
+    def draw_move(self, r, c, symbol, is_last=True):
+        """Vẽ quân cờ (X hoặc O) tại vị trí (r, c)."""
+        x = c * self.cell_size + self.cell_size // 2
+        y = r * self.cell_size + self.cell_size // 2
+        color = "red" if symbol == "X" else "blue"
+        
+        self.canvas.create_text(x, y, text=symbol, fill=color, font=("Arial", 16, "bold"))
+        
+        if is_last:
+            if self.last_move_item:
+                self.canvas.delete(self.last_move_item)
+            # Highlight nước đi cuối cùng (màu xanh lá)
+            x1 = c * self.cell_size
+            y1 = r * self.cell_size
+            self.last_move_item = self.canvas.create_rectangle(x1, y1, x1+self.cell_size, y1+self.cell_size, outline="green", width=2)
+
+    def reset_board(self):
+        """Xóa bàn cờ để chơi ván mới."""
+        self.canvas.delete("all")
+        self.draw_grid()
+        self.last_move_item = None
+        self.chat_log.config(state="normal")
+        self.chat_log.delete(1.0, tk.END)
+        self.chat_log.config(state="disabled")
+
+# --- BỘ ĐIỀU KHIỂN CHÍNH (MAIN CONTROLLER) ---
+
+class CaroApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Caro Premium ProMax Ultra 4K Titan Super Unlimited Hyper Quantum Infinity Omega Supreme Legendary Edition AI")
+        self.geometry("900x700")
+        
+        self.network = None
+        self.username = ""
+        self.msg_queue = queue.Queue()
+
+        self.container = tk.Frame(self)
+        self.container.pack(fill="both", expand=True)
+
+        self.views = {}
+        
+        # Init Views
+        self.views["login"] = LoginView(self.container, self.handle_login)
+        self.views["lobby"] = LobbyView(self.container, self.handle_create_room, self.handle_join_room, self.handle_refresh_lobby, self.handle_quick_play)
+        self.views["game"] = GameView(self.container, self.handle_move, self.handle_chat, self.handle_leave_room)
+
+        self.show_view("login")
+        
+        self.after(100, self.process_queue)
+
+    def show_view(self, name):
+        for view in self.views.values():
+            view.pack_forget()
+        self.views[name].pack(fill="both", expand=True)
+
+    def process_queue(self):
+        try:
+            while True:
+                msg = self.msg_queue.get_nowait()
+                self.handle_server_message(msg)
+        except queue.Empty:
+            pass
+        self.after(50, self.process_queue)
+
+    def on_network_message(self, msg):
+        self.msg_queue.put(msg)
+
+    def on_closing(self):
+        if self.network:
+            self.network.disconnect()
+        self.destroy()
