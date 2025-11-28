@@ -342,3 +342,131 @@ class CaroApp(tk.Tk):
         if self.network:
             self.network.disconnect()
         self.destroy()
+
+    # --- HANDLERS ---
+    def handle_login(self, ip, name):
+        self.username = name
+        self.network = NetworkClient(ip, DEFAULT_PORT, self.on_network_message)
+        if self.network.connect():
+            self.network.send({"type": CMD_LOGIN, "username": name})
+        else:
+            messagebox.showerror("Error", "Cannot connect to server")
+
+    def handle_refresh_lobby(self):
+        self.network.send({"type": CMD_LIST_ROOMS})
+
+    def handle_create_room(self, name):
+        self.network.send({"type": CMD_CREATE_ROOM, "name": name})
+
+    def handle_join_room(self, room_id):
+        self.network.send({"type": CMD_JOIN_ROOM, "room_id": room_id})
+
+    def handle_quick_play(self):
+        self.network.send({"type": CMD_QUICK_PLAY})
+
+    def handle_leave_room(self):
+        self.network.send({"type": CMD_LEAVE_ROOM})
+
+    def handle_move(self, r, c):
+        self.network.send({"type": CMD_MOVE, "r": r, "c": c})
+
+    def handle_chat(self, msg):
+        self.network.send({"type": CMD_CHAT, "msg": msg})
+
+    def handle_server_message(self, msg):
+        cmd = msg.get("type")
+
+        if cmd == "DISCONNECTED":
+            messagebox.showwarning("Disconnected", "Server connection lost")
+            self.show_view("login")
+            return
+
+        if cmd == CMD_LOGIN_OK:
+            self.show_view("lobby")
+        
+        elif cmd == CMD_ROOM_LIST:
+            self.views["lobby"].update_list(msg.get("rooms", []))
+            self.show_view("lobby")
+
+        elif cmd == CMD_JOIN_OK:
+            self.views["game"].reset_board()
+            self.views["game"].lbl_room.config(text=f"Room: {msg.get('room_name')}")
+            self.views["game"].lbl_status.config(text="Waiting for opponent...")
+            self.views["game"].lbl_score.config(text="Score: 0/0") # Reset display
+            self.show_view("game")
+
+        elif cmd == CMD_GAME_START:
+            symbol = msg.get("symbol")
+            opp = msg.get("opponent")
+            my_score = msg.get("my_score", 0)
+            total = msg.get("total_games", 0)
+            
+            self.views["game"].reset_board() # Clear board for rematch
+            self.views["game"].lbl_status.config(text=f"Game Started! You are {symbol} vs {opp}")
+            self.views["game"].lbl_score.config(text=f"Score: {my_score}/{total}")
+            
+           
+
+        elif cmd == CMD_TURN:
+            sym = msg.get("symbol")
+            user = msg.get("username")
+            self.views["game"].lbl_turn.config(text=f"Turn: {sym} ({user})")
+
+        elif cmd == CMD_VALID_MOVE:
+            self.views["game"].draw_move(msg["r"], msg["c"], msg["symbol"])
+
+        elif cmd == CMD_CHAT:
+            sender = msg["username"]
+            is_own = (sender == self.username)
+            self.views["game"].add_chat(sender, msg["msg"], is_own)
+
+        elif cmd == CMD_WIN:
+            winner = msg["username"]
+            sym = msg["symbol"]
+            self.views["game"].draw_move(msg.get("r", -1), msg.get("c", -1), sym, is_last=False)
+            
+            # Highlight winning cells
+            win_cells = msg.get("win_cells", [])
+            if win_cells:
+                self.views["game"].highlight_win(win_cells)
+            
+            # Custom Message
+            if winner == self.username:
+                msg_title = "Victory!"
+                msg_body = "You Won!"
+            else:
+                msg_title = "Defeat"
+                msg_body = "You Lost."
+            
+            self.views["game"].lbl_status.config(text=f"Winner: {winner}")
+            messagebox.showinfo(msg_title, msg_body)
+            
+            # Ask for Rematch
+            if messagebox.askyesno("Play Again?", "Do you want to play again?"):
+                self.views["game"].lbl_status.config(text="Waiting for opponent to accept rematch...")
+                self.network.send({"type": CMD_PLAY_AGAIN})
+            else:
+                self.handle_leave_room()
+
+        elif cmd == CMD_DRAW:
+            messagebox.showinfo("Game Over", "Draw!")
+            self.views["game"].lbl_status.config(text="Draw")
+            # Ask for Rematch
+            if messagebox.askyesno("Play Again?", "Do you want to play again?"):
+                self.views["game"].lbl_status.config(text="Waiting for opponent to accept rematch...")
+                self.network.send({"type": CMD_PLAY_AGAIN})
+            else:
+                self.handle_leave_room()
+
+        elif cmd == CMD_OPPONENT_LEFT:
+            messagebox.showwarning("Info", "Opponent left the room.")
+            self.views["game"].lbl_status.config(text="Opponent left")
+            self.views["game"].reset_board()
+
+        elif cmd == CMD_ERROR:
+            messagebox.showerror("Error", msg.get("msg", "Unknown error"))
+
+if __name__ == "__main__":
+    app = CaroApp()
+    app.protocol("WM_DELETE_WINDOW", app.on_closing)
+    app.mainloop()

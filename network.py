@@ -54,9 +54,20 @@ class NetworkClient:
         if not self.connected:
             return
         try:
-            # Dùng hàm giả định từ common.py
             send_json(self.sock, data) 
         except Exception as e:
             print(f"Lỗi gửi tin: {e}")
             self.disconnect()
-    
+    def _receive_loop(self):
+        """
+        Vòng lặp nhận tin nhắn từ Server
+        """
+        while self.running:
+            msg = recv_json(self.sock)
+            if msg is None:
+                # Mất kết nối
+                self.connected = False
+                self.on_message({"type": "DISCONNECTED"})
+                break
+            # Gọi callback để xử lý tin nhắn 
+            self.on_message(msg)    
